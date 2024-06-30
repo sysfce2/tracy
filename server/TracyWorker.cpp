@@ -3425,7 +3425,10 @@ uint64_t* Worker::GetSourceLocationZonesCntReal( uint16_t srcloc )
 uint64_t* Worker::GetGpuSourceLocationZonesCntReal( uint16_t srcloc )
 {
     auto it = m_data.gpuSourceLocationZonesCnt.find( srcloc );
-    assert( it != m_data.gpuSourceLocationZonesCnt.end() );
+    if( it == m_data.gpuSourceLocationZonesCnt.end() )
+    {
+        it = m_data.gpuSourceLocationZonesCnt.emplace( srcloc, 0 ).first;
+    }
     m_data.gpuCntLast.first = srcloc;
     m_data.gpuCntLast.second = &it->second;
     return &it->second;
@@ -3635,14 +3638,13 @@ void Worker::AddSourceLocationPayload( const char* data, size_t sz )
     memcpy( &color, data, 4 );
     memcpy( &line, data + 4, 4 );
     data += 8;
-    auto end = data;
+    auto end = data + strlen( data );
 
-    while( *end ) end++;
     const auto func = StoreString( data, end - data );
     end++;
 
     data = end;
-    while( *end ) end++;
+    end = data + strlen( data );
     const auto source = StoreString( data, end - data );
     end++;
 

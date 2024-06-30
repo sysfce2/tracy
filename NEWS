@@ -121,6 +121,12 @@ vx.xx.x (xxxx-xx-xx)
 - It is now possible to adjust plot height.
 - Trace comparison statistics were expanded and made more clear.
 - Implemented retrieval of kernel symbol code on Linux.
+- Added support for multiple compression streams in trace files. This
+  effectively parallelizes both load and save operations.
+  - The default save setup is now set to Zstd level 3 with 4 compression
+    streams. This gives both faster compression time and smaller file size.
+- New users will be now eased into the profiler with a set of tutorial
+  achievements.
 
 
 v0.10.0 (2023-10-16)

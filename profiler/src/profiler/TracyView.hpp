@@ -11,6 +11,7 @@
 
 #include "imgui.h"
 
+#include "TracyAchievements.hpp"
 #include "TracyBadVersion.hpp"
 #include "TracyBuzzAnim.hpp"
 #include "TracyConfig.hpp"
@@ -103,8 +104,8 @@ public:
     using SetScaleCallback = void(*)( float );
     using AttentionCallback = void(*)();
 
-    View( void(*cbMainThread)(const std::function<void()>&, bool), const char* addr, uint16_t port, ImFont* fixedWidth, ImFont* smallFont, ImFont* bigFont, SetTitleCallback stcb, SetScaleCallback sscb, AttentionCallback acb, const Config& config );
-    View( void(*cbMainThread)(const std::function<void()>&, bool), FileRead& f, ImFont* fixedWidth, ImFont* smallFont, ImFont* bigFont, SetTitleCallback stcb, SetScaleCallback sscb, AttentionCallback acb, const Config& config );
+    View( void(*cbMainThread)(const std::function<void()>&, bool), const char* addr, uint16_t port, ImFont* fixedWidth, ImFont* smallFont, ImFont* bigFont, SetTitleCallback stcb, SetScaleCallback sscb, AttentionCallback acb, const Config& config, AchievementsMgr* amgr );
+    View( void(*cbMainThread)(const std::function<void()>&, bool), FileRead& f, ImFont* fixedWidth, ImFont* smallFont, ImFont* bigFont, SetTitleCallback stcb, SetScaleCallback sscb, AttentionCallback acb, const Config& config, AchievementsMgr* amgr );
     ~View();
 
     bool Draw();
@@ -223,6 +224,8 @@ private:
     };
 
     void InitTextEditor();
+    void SetupConfig( const Config& config );
+    void Achieve( const char* id );
 
     bool DrawImpl();
     void DrawNotificationArea();
@@ -367,7 +370,7 @@ private:
     void CalcZoneTimeDataImpl( const V& children, const ContextSwitch* ctx, unordered_flat_map<int16_t, ZoneTimeData>& data, int64_t& ztime );
 
     void SetPlaybackFrame( uint32_t idx );
-    bool Save( const char* fn, FileWrite::Compression comp, int zlevel, bool buildDict );
+    bool Save( const char* fn, FileCompression comp, int zlevel, bool buildDict, int streams );
 
     void Attention( bool& alreadyDone );
     void UpdateTitle();
@@ -867,6 +870,9 @@ private:
     bool m_attnFailure = false;
     bool m_attnWorking = false;
     bool m_attnDisconnected = false;
+
+    AchievementsMgr* m_achievementsMgr;
+    bool m_achievements = false;
 };
 
 }

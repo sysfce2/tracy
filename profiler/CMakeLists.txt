@@ -5,6 +5,8 @@ option(GTK_FILESELECTOR "Use the GTK file selector on Linux instead of the xdg-p
 option(LEGACY "Instead of Wayland, use the legacy X11 backend on Linux" OFF)
 option(NO_ISA_EXTENSIONS "Disable ISA extensions (don't pass -march=native or -mcpu=native to the compiler)" OFF)
 option(NO_STATISTICS "Disable calculation of statistics" OFF)
+option(SELF_PROFILE "Enable self-profiling" OFF)
+option(NO_PARALLEL_STL "Disable parallel STL" OFF)
 
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/version.cmake)
 
@@ -21,6 +23,8 @@ include(${CMAKE_CURRENT_LIST_DIR}/../cmake/vendor.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/server.cmake)
 
 set(SERVER_FILES
+    TracyAchievementData.cpp
+    TracyAchievements.cpp
     TracyBadVersion.cpp
     TracyColor.cpp
     TracyEventDebug.cpp
@@ -146,6 +150,15 @@ endif()
 
 include_directories(${INCLUDES})
 link_libraries(${LIBS})
+
+if(SELF_PROFILE)
+    add_definitions(-DTRACY_ENABLE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O3 -fno-omit-frame-pointer")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O3 -fno-omit-frame-pointer")
+    set(PROFILER_FILES ${PROFILER_FILES}
+        ../public/TracyClient.cpp
+    )
+endif()
 
 if(WIN32)
     set(PROFILER_FILES ${PROFILER_FILES}

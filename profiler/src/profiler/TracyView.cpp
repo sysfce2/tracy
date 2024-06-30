@@ -35,7 +35,7 @@ namespace tracy
 
 double s_time = 0;
 
-View::View( void(*cbMainThread)(const std::function<void()>&, bool), const char* addr, uint16_t port, ImFont* fixedWidth, ImFont* smallFont, ImFont* bigFont, SetTitleCallback stcb, SetScaleCallback sscb, AttentionCallback acb, const Config& config )
+View::View( void(*cbMainThread)(const std::function<void()>&, bool), const char* addr, uint16_t port, ImFont* fixedWidth, ImFont* smallFont, ImFont* bigFont, SetTitleCallback stcb, SetScaleCallback sscb, AttentionCallback acb, const Config& config, AchievementsMgr* amgr )
     : m_worker( addr, port, config.memoryLimit == 0 ? -1 : ( config.memoryLimitPercent * tracy::GetPhysicalMemorySize() / 100 ) )
     , m_staticView( false )
     , m_viewMode( ViewMode::LastFrames )
@@ -53,15 +53,15 @@ View::View( void(*cbMainThread)(const std::function<void()>&, bool), const char*
     , m_stcb( stcb )
     , m_sscb( sscb )
     , m_acb( acb )
-    , m_userData()
     , m_cbMainThread( cbMainThread )
+    , m_achievementsMgr( amgr )
+    , m_achievements( config.achievements )
 {
     InitTextEditor();
-
-    m_vd.frameTarget = config.targetFps;
+    SetupConfig( config );
 }
 
-View::View( void(*cbMainThread)(const std::function<void()>&, bool), FileRead& f, ImFont* fixedWidth, ImFont* smallFont, ImFont* bigFont, SetTitleCallback stcb, SetScaleCallback sscb, AttentionCallback acb, const Config& config )
+View::View( void(*cbMainThread)(const std::function<void()>&, bool), FileRead& f, ImFont* fixedWidth, ImFont* smallFont, ImFont* bigFont, SetTitleCallback stcb, SetScaleCallback sscb, AttentionCallback acb, const Config& config, AchievementsMgr* amgr )
     : m_worker( f )
     , m_filename( f.GetFilename() )
     , m_staticView( true )
@@ -78,11 +78,15 @@ View::View( void(*cbMainThread)(const std::function<void()>&, bool), FileRead& f
     , m_acb( acb )
     , m_userData( m_worker.GetCaptureProgram().c_str(), m_worker.GetCaptureTime() )
     , m_cbMainThread( cbMainThread )
+    , m_achievementsMgr( amgr )
+    , m_achievements( config.achievements )
 {
     m_notificationTime = 4;
     m_notificationText = std::string( "Trace loaded in " ) + TimeToString( m_worker.GetLoadTime() );
 
     InitTextEditor();
+    SetupConfig( config );
+
     m_vd.zvStart = m_worker.GetFirstTime();
     m_vd.zvEnd = m_worker.GetLastTime();
     m_userData.StateShouldBePreserved();
@@ -93,7 +97,7 @@ View::View( void(*cbMainThread)(const std::function<void()>&, bool), FileRead& f
     if( m_worker.GetCallstackFrameCount() == 0 ) m_showUnknownFrames = false;
     if( m_worker.GetCallstackSampleCount() == 0 ) m_showAllSymbols = true;
 
-    m_vd.frameTarget = config.targetFps;
+    Achieve( "loadTrace" );
 }
 
 View::~View()
@@ -115,6 +119,20 @@ void View::InitTextEditor()
 {
     m_sourceView = std::make_unique<SourceView>();
     m_sourceViewFile = nullptr;
+}
+
+void View::SetupConfig( const Config& config )
+{
+    m_vd.frameTarget = config.targetFps;
+    m_vd.dynamicColors = config.dynamicColors;
+    m_vd.forceColors = config.forceColors;
+    m_vd.shortenName = (ShortenName)config.shortenName;
+}
+
+void View::Achieve( const char* id )
+{
+    if( !m_achievements || !m_achievementsMgr ) return;
+    m_achievementsMgr->Achieve( id );
 }
 
 void View::ViewSource( const char* fileName, int line )
@@ -551,8 +569,8 @@ bool View::Draw()
         ImGui::PopFont();
         ImGui::Separator();
 
-        static FileWrite::Compression comp = FileWrite::Compression::Fast;
-        static int zlvl = 6;
+        static FileCompression comp = FileCompression::Zstd;
+        static int zlvl = 3;
         ImGui::TextUnformatted( ICON_FA_FILE_ZIPPER " Trace compression" );
         ImGui::SameLine();
         TextDisabledUnformatted( "Can be changed later with the upgrade utility" );
@@ -560,7 +578,7 @@ bool View::Draw()
         int idx = 0;
         while( CompressionName[idx] )
         {
-            if( ImGui::RadioButton( CompressionName[idx], (int)comp == idx ) ) comp = (FileWrite::Compression)idx;
+            if( ImGui::RadioButton( CompressionName[idx], (int)comp == idx ) ) comp = (FileCompression)idx;
             ImGui::SameLine();
             TextDisabledUnformatted( CompressionDesc[idx] );
             idx++;
@@ -572,8 +590,16 @@ bool View::Draw()
         ImGui::Indent();
         if( ImGui::SliderInt( "##zstd", &zlvl, 1, 22, "%d", ImGuiSliderFlags_AlwaysClamp ) )
         {
-            comp = FileWrite::Compression::Zstd;
+            comp = FileCompression::Zstd;
         }
+        ImGui::Unindent();
+
+        static int streams = 4;
+        ImGui::TextUnformatted( ICON_FA_SHUFFLE " Compression streams" );
+        ImGui::SameLine();
+        TextDisabledUnformatted( "Parallelize save and load at the cost of file size" );
+        ImGui::Indent();
+        ImGui::SliderInt( "##streams", &streams, 1, 64, "%d", ImGuiSliderFlags_AlwaysClamp );
         ImGui::Unindent();
 
         static bool buildDict = false;
@@ -588,9 +614,10 @@ bool View::Draw()
         ImGui::Separator();
         if( ImGui::Button( ICON_FA_FLOPPY_DISK " Save trace" ) )
         {
-            saveFailed = !Save( fn, comp, zlvl, buildDict );
+            saveFailed = !Save( fn, comp, zlvl, buildDict, streams );
             m_filenameStaging.clear();
             ImGui::CloseCurrentPopup();
+            Achieve( "saveTrace" );
         }
         ImGui::SameLine();
         if( ImGui::Button( "Cancel" ) )
@@ -650,6 +677,14 @@ bool View::DrawImpl()
         DrawWaitingDots( s_time );
         ImGui::End();
         return keepOpen;
+    }
+
+    if( m_achievements )
+    {
+        if( m_worker.IsConnected() ) Achieve( "connectToClient" );
+        if( m_worker.GetZoneCount() > 0 ) Achieve( "instrumentationIntro" );
+        if( m_worker.GetZoneCount() > 100 * 1000 * 1000 ) Achieve( "100million" );
+        if( m_worker.GetCallstackSampleCount() > 0 ) Achieve( "samplingIntro" );
     }
 
     Attention( m_attnWorking );
@@ -1340,9 +1375,9 @@ void View::DrawSourceTooltip( const char* filename, uint32_t srcline, int before
     ImGui::PopStyleVar();
 }
 
-bool View::Save( const char* fn, FileWrite::Compression comp, int zlevel, bool buildDict )
+bool View::Save( const char* fn, FileCompression comp, int zlevel, bool buildDict, int streams )
 {
-    std::unique_ptr<FileWrite> f( FileWrite::Open( fn, comp, zlevel ) );
+    std::unique_ptr<FileWrite> f( FileWrite::Open( fn, comp, zlevel, streams ) );
     if( !f ) return false;
 
     m_userData.StateShouldBePreserved();
